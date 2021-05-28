@@ -76,7 +76,7 @@ struct Board {
     len: i16,
     width: i16,
     zobrist: u64,
-    moves: u16,
+    moves: u16
 }
 
 impl Board {
@@ -87,6 +87,7 @@ impl Board {
             width,
             zobrist,
             moves,
+
         }
     }
 
@@ -174,11 +175,9 @@ impl Board {
         let mut new_hash: u64 = board.zobrist ^ zobrist_pos[block.x as usize][block.y as usize][BLOCK_BITS[block.width as usize][block.len as usize]];
         new_hash = new_hash ^ zobrist_pos[new_left as usize][new_bot as usize][BLOCK_BITS[block.width as usize][block.len as usize]];
 
-
         let new_board: Board = Board::moved_board(new_blocks, board.len, board.width, new_hash, board.moves + 1);
         boards.push(new_board);
     }
-
 }
 
 impl PartialEq for Board { 
@@ -337,16 +336,21 @@ fn solve(start: Board, finish: Board) {
             }
         }
     }
+
     if found {
         println!("Done");
         println!("Moves made: {}", total_moves);
     }
+
     else {
         println!("No solution found");
     }
+
     let duration = start_time.elapsed();
+
     println!("Total boards seen: {}", total_boards);
     println!("Total unique boards seen: {}", boards.len());
     println!("Time elapsed taken is: {:?}", duration);
+    
     process::exit(0);
 }
