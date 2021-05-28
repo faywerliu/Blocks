@@ -9,6 +9,7 @@ use std::str;
 use std::process;
 use std::hash::{Hash, Hasher};
 use rand::Rng;
+use std::time::{Duration, Instant};
 
 const DIR: [(i16, i16); 4] = [(0, 1), (0, -1), (1, 0), (-1, 0)];
 const BLOCK_BITS: [[usize; 16]; 16] = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 
@@ -29,6 +30,7 @@ const BLOCK_BITS: [[usize; 16]; 16] = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
                                      [240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255]];
 
 #[derive(Hash)]
+#[derive(Debug)]
 struct Block {
     x: i16,
     y: i16,
@@ -57,20 +59,34 @@ impl Block {
     }
 }
 
+impl PartialEq for Block { 
+    fn eq(&self, other: &Self) -> bool {
+        return
+            self.x == other.x
+            && self.y == other.y
+            && self.len == other.len 
+            && self.width == other.width;
+    }
+}
+
+impl Eq for Block {}
+
 struct Board {
     blocks: Vec<Block>,
     len: i16,
     width: i16,
-    hash: u64,
+    zobrist: u64,
+    moves: u16,
 }
 
 impl Board {
-    fn moved_board(blocks: Vec<Block>, len: i16, width: i16, hash: u64) -> Board {
+    fn moved_board(blocks: Vec<Block>, len: i16, width: i16, zobrist: u64, moves: u16) -> Board {
         Board {
             blocks,
             len,
             width,
-            hash,
+            zobrist,
+            moves,
         }
     }
 
@@ -83,9 +99,9 @@ impl Board {
 
         for block in &self.blocks {
             let block_left: usize = block.x as usize;
-            let block_right: usize = (block.x + block.width - 1) as usize;
-            let block_bot = block.y as usize;
-            let block_top = (block.y + block.len - 1) as usize;
+            let block_right: usize = (block.x + block.width) as usize;
+            let block_bot: usize = block.y as usize;
+            let block_top: usize = (block.y + block.len) as usize;
 
             for x in block_left..block_right {
                 for y in block_bot..block_top {
@@ -104,57 +120,66 @@ impl Board {
 
     fn do_move(board: &Board, boards: &mut Vec<Board>, state: &Vec<Vec<bool>>, block: &Block, dir: usize, zobrist_pos: &Vec<Vec<Vec<u64>>>) {
         let new_left = block.x + DIR[dir].0;
-        let new_right = (block.x + block.width - 1) + DIR[dir].0;
+        let new_right = (block.x + block.width) + DIR[dir].0;
         let new_bot = block.y + DIR[dir].1;
-        let new_top = (block.y + block.len - 1) + DIR[dir].1;
+        let new_top = (block.y + block.len) + DIR[dir].1;
 
-        if new_left < 0 || new_bot < 0 || new_right == board.width || new_left == board.len {
+        if new_left < 0 || new_bot < 0 || new_right > board.width || new_top > board.len {
             return;
         }
-
-        for x in new_left..new_right {
-            for y in new_bot..new_top {
-                if state[x as usize][y as usize] {
-                    return;
+        
+        match dir {
+            0 => { 
+                for x in new_left..new_right {
+                    if state[x as usize][(new_top - 1) as usize] {
+                        return;
+                    }
                 }
             }
+            1 => { 
+                for x in new_left..new_right {
+                    if state[x as usize][new_bot as usize] {
+                        return;
+                    }
+                }
+            }
+            2 => { 
+                for y in new_bot..new_top {
+                    if state[(new_right - 1) as usize][y as usize] {
+                        return;
+                    }
+                }
+            }
+            3 => { 
+                for y in new_bot..new_top {
+                    if state[new_left as usize][y as usize] {
+                        return;
+                    }
+                }
+            }
+            _ => return,
         }
 
         let mut new_blocks: Vec<Block> = Vec::new();
 
         for b in &board.blocks {
             if Block::eq(block, b) {
-                new_blocks.push(Block::new(new_left, new_top, b.len, b.width));
+                new_blocks.push(Block::new(new_left, new_bot, b.len, b.width));
             }
             else {
                 new_blocks.push(Block::copy(b));
             }
         }
 
-        let mut new_hash: u64 = board.hash ^ zobrist_pos[block.x as usize][block.y as usize][BLOCK_BITS[block.width as usize][block.len as usize]];
-        new_hash = new_hash ^ zobrist_pos[new_left as usize][new_top as usize][BLOCK_BITS[block.width as usize][block.len as usize]];
+        let mut new_hash: u64 = board.zobrist ^ zobrist_pos[block.x as usize][block.y as usize][BLOCK_BITS[block.width as usize][block.len as usize]];
+        new_hash = new_hash ^ zobrist_pos[new_left as usize][new_bot as usize][BLOCK_BITS[block.width as usize][block.len as usize]];
 
 
-        let new_board: Board = Board::moved_board(new_blocks, board.len, board.width, new_hash);
+        let new_board: Board = Board::moved_board(new_blocks, board.len, board.width, new_hash, board.moves + 1);
         boards.push(new_board);
     }
 
 }
-
-
-
-impl PartialEq for Block { 
-    fn eq(&self, other: &Self) -> bool {
-        return
-            self.x == other.x
-            && self.y == other.y
-            && self.len == other.len 
-            && self.width == other.width;
-    }
-}
-
-impl Eq for Block {}
-
 
 impl PartialEq for Board { 
     fn eq(&self, other: &Self) -> bool {
@@ -175,18 +200,17 @@ impl PartialEq for Board {
 impl Eq for Board {}
 impl Hash for Board {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.hash.hash(state);
+        self.zobrist.hash(state);
     }
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut start_file: String = String::from("src/start/simple");
-    //start_file.push_str(&args[1]);
-
-    let mut finish_file: String = String::from("src/finish/simple");
-    //finish_file.push_str(&args[2]);
+    let mut start_file: String = String::from("src/start/");
+    let mut finish_file: String = String::from("src/finish/");
+    start_file.push_str(&args[1]);
+    finish_file.push_str(&args[1]);
 
     let (start, finish): (Board, Board) = read_input(start_file, finish_file);
 
@@ -228,7 +252,7 @@ fn read_input(start_file: String, finish_file: String) -> (Board, Board) {
         }
     }
 
-    let start: Board = Board{blocks: start_blocks, len: len, width: width, hash: 0};
+    let start: Board = Board{blocks: start_blocks, len: len, width: width, zobrist: 0, moves: 0};
 
     if let Ok(lines) = read_lines(finish_file) {
         for line in lines {
@@ -256,7 +280,7 @@ fn read_input(start_file: String, finish_file: String) -> (Board, Board) {
         }
     }
 
-    let finish: Board = Board{blocks: finish_blocks, len: len, width: width, hash: 0};
+    let finish: Board = Board{blocks: finish_blocks, len: len, width: width, zobrist: 0, moves: 0};
 
     (start, finish)
 }
@@ -267,14 +291,14 @@ where P: AsRef<Path>, {
     Ok(io::BufReader::new(file).lines())
 }
 
-fn write_output() {
-
-}
-
 fn solve(start: Board, finish: Board) {
+    let start_time = Instant::now();
     let mut boards: HashSet<u64> = HashSet::new();
     let mut queue: VecDeque<Board> = VecDeque::new();
     let mut vec_boards: Vec<Board>;
+
+    let mut total_boards = 0;
+    let mut total_moves = 0;
 
     let mut zobrist_pos: Vec<Vec<Vec<u64>>> = vec![vec![vec![0; 256]; start.len as usize]; start.width as usize];
     for i in 0..start.width as usize {
@@ -292,10 +316,13 @@ fn solve(start: Board, finish: Board) {
     let mut found = false;
 
     while !(queue.is_empty()) {
-        let cur_board: Board = queue.pop_front().unwrap();
-        boards.insert(cur_board.hash);
+        total_boards += 1;
 
+        let cur_board: Board = queue.pop_front().unwrap();
+        boards.insert(cur_board.zobrist);
+    
         if cur_board.eq(&finish) {
+            total_moves = cur_board.moves;
             found = true;
             break;
         }
@@ -303,15 +330,23 @@ fn solve(start: Board, finish: Board) {
         vec_boards = cur_board.find_moves(zobrist_pos);
     
         for board in vec_boards {
-            if !boards.contains(&board.hash) {
-                queue.push_front(board);
+            let zobrist: u64 = board.zobrist;
+            if !boards.contains(&zobrist) {
+                queue.push_back(board);
+                boards.insert(zobrist);
             }
         }
     }
     if found {
-
+        println!("Done");
+        println!("Moves made: {}", total_moves);
     }
-    
-    println!("No solution found");
+    else {
+        println!("No solution found");
+    }
+    let duration = start_time.elapsed();
+    println!("Total boards seen: {}", total_boards);
+    println!("Total unique boards seen: {}", boards.len());
+    println!("Time elapsed taken is: {:?}", duration);
     process::exit(0);
 }
