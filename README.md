@@ -24,6 +24,10 @@ This program treats movement from one tile to another as a single move. For inst
 
 Zobrist Hashing is an efficient way to hash different game states that involve a "board" with positions and different "pieces". To compute the hash, instead of looping through each element of a game state O(|E|), a set of XOR's does this for us in O(1).
 
+**Why Rust?** 
+
+I wanted to try learning it. This project would probably be easier in a language such as C++ or Java since I'm not quite used to Rust yet.
+
 ## To (Maybe) Do:
 - Add support for puzzles such as "15 Puzzle"
 - Record the moves taken.
